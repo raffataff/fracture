@@ -1,0 +1,1408 @@
+<!DOCTYPE html>
+<html><head>
+<base href="https://sons-of-arn.neocities.org">
+<link rel="icon" type="image/png" sizes="32x32" href="images/fractLogoA.png">
+<link href="visualizers/vizStyles/fracStylesTest.css" rel="stylesheet" type="text/css" media="all">
+<link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+<title>Fracture</title>
+<style></style>
+<script type='text/javascript' src='https://neocities.org/xTC7vz3OEj0YwBLwo0B7dm2SX5VwdS7e3nbKivFr80bPOkbWc_vNzjAz1msJ0dxd_c9MRFHuqaTPe-lsENtgIA=='></script><script type='text/javascript' src='https://neocities.org/N-aXsZGj9voepJIg87-k2_YVtuxyOiCsBzLOtpwN_5j0PcTl_VDGTw2rXX4irQ5LbGWLL3yMsrt8SKpqSFiAlQ=='></script><script type='text/javascript' src='https://neocities.org/Ol4hUq-GHHEduehNxaw-VXiQlL8dg0Hb2WHVNlGFRS0kkkCEGKVSSqVcZ0MkQ0hV9R07NTBl0GA8aGLSxNzEXw=='></script></head>
+<body>
+<canvas id="canvas"></canvas>
+  <div id="dropZone" class="drop-zone hidden">
+  <div class="drop-zone-content">
+    <span class="material-icons">cloud_upload</span>
+    <p>Drop audio files here</p>
+  </div>
+</div>
+  <div id="ui">
+    <div class="top-controls">
+       <input type="file" id="audioUpload" class="file-input" accept="audio/*" multiple>
+      <label for="audioUpload" class="file-input-label hide-upload-button">
+        <span class="material-icons file-input-icon">music_note</span>
+        <span class="file-input-text">Upload Audio</span>
+      </label>
+      
+      <input type="file" id="addToPlaylist" class="file-input" accept="audio/*" multiple>
+      <label for="addToPlaylist" class="file-input-label" title="Add audio files to current playlist">
+        <span class="material-icons file-input-icon">playlist_add</span>
+        <span class="file-input-text">Add Songs</span>
+      </label>
+      
+      <button id="playPause" class="control-button" title="Play/Pause">
+        <span class="material-icons play-icon">play_arrow</span>
+        <span class="material-icons pause-icon" style="display:none;">pause</span>
+      </button>
+      <button id="prevTrack" class="control-button" title="Previous Track"><span class="material-icons">skip_previous</span></button>
+      <button id="nextTrack" class="control-button" title="Next Track"><span class="material-icons">skip_next</span></button>
+      <button id="playlistToggle" class="control-button" title="Show/Hide Playlist"><span class="material-icons">playlist_play</span></button>
+      
+      <select id="visualizerSelect" title="Select Visualizer">
+        <option value="pulse">Pulse</option>
+        <option value="shatter">Shatter</option>
+        <option value="pulsar">Pulsar</option> 
+        <option value="lotus">Lotus</option>
+        <option value="vortex">Vortex</option>
+        <option value="bubbles">Bubbles</option>
+        <option value="acid">Acid</option>
+        <option value="chasm">Chasm</option>
+        <option value="nexus">Nexus</option> 
+        <option value="scorpion">Scorpion</option> 
+        <option value="mist">Mist</option>
+        <option value="wave">Waves</option>
+        <option value="storm">Storm</option>
+        <option value="nebulus">Nebulus</option>
+        <option value="prismatic">Prismatic</option>
+        <option value="random">Shuffle</option>
+      </select>
+      
+      
+      <div class="volume-control">
+        <button id="muteButton" class="control-button" title="Mute/Unmute">
+          <span class="material-icons">volume_up</span>
+        </button>
+        <div class="volume-slider-container">
+          <input type="range" id="volumeSlider" min="0" max="11" step="1" value="11" title="Adjust Volume">
+          <span id="volumeDisplay">11</span>
+        </div>
+      </div>
+      
+    </div>
+   
+    <div class="slider-container">
+      <div class="time-display">
+        <span id="currentTime">00:00</span>
+        <span id="duration">00:00</span>
+      </div>
+      <input type="range" id="seekBar" class="seek-slider" min="0" max="100" step="0.1" value="0">
+      <div class="hologram">00:00</div>
+      
+    </div>
+   
+    <div id="playlistBox" class="hidden">
+      <ul id="playlistItems"></ul>
+    </div>
+   
+    <div id="logo-container">
+      <a href="visualizers.html" title="Go to Visualizers">
+        <img src="images/fractLogoA.png" alt="Logo" class="logo" id="logo">
+      </a>
+    </div>
+  </div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Sortable/1.14.0/Sortable.min.js"></script>
+<script src="visualizers/shaders/shadersBranch.js"></script>
+<script>
+let camera, renderer, material, audioContext, analyser, dataArray, source;
+let audioBuffer;
+let isPlaying = false;
+let songDuration = 0;
+let startTime = 0;
+let pauseTime = 0;
+let currentVisualizer = 'random';
+let bass, mid, treble, total = 0;
+let gainNode;
+let currentVolume = 1;
+let isMuted = false;
+
+let scene1, scene2, blendScene, blendMesh;
+let currentScene = 1;
+let transitionStart;
+let isTransitioning = false;
+let transitionData = null;
+
+let renderTarget1, renderTarget2;
+
+
+let uniforms = {
+  time: { value: 0 },
+  timeX: { value: 0 },
+  timeI: { value: 0 },
+  bass: { value: 0 },
+  mid: { value: 0 },
+  treble: { value: 0 },
+  total: { value: 0 },
+  bassDrive: { value: 0 },
+  midDrive: { value: 0 },
+  trebleDrive: { value: 0 },
+  bubbles: { value: 0 },
+  amp: { value: 0 },
+  zoom: { value: 0 },
+  colorSpeed: { value: 0.05 },
+  glowIntensity: { value: 1.5 },
+  resolution: { value: new THREE.Vector2() }
+};
+
+let lastFrameTime = 0;
+let frameThreshold = 1000 / 60; // Target 60fps
+let isActive = true; // For tracking if we should be running full speed
+
+let lastFrequencyUpdate = 0;
+const FREQUENCY_UPDATE_INTERVAL = 1000 / 60; // 60fps for audio updates
+let smoothedBass = 0;
+let smoothedMid = 0;
+let smoothedTreble = 0;
+const SMOOTHING_FACTOR = 0.4; // Adjust this to change smoothing amount (0-1)
+
+let playlist = [];
+let currentTrackIndex = 0;
+let playlistOrder = [];
+
+
+const mapRange = (value, low1, high1, low2, high2) => {
+  if (Array.isArray(value)) {
+    return value.map(val => low2 + (high2 - low2) * (val - low1) / (high1 - low1));
+  }
+  return low2 + (high2 - low2) * (value - low1) / (high1 - low1);
+};
+
+
+
+const visualizerList = ['pulse', 'lotus', 'bubbles', 'shatter', 'pulsar','acid', 'vortex', 'nexus', 'scorpion', 'wave', 'storm', 'nebulus', 'mist', 'prismatic']; //  
+
+const shaderLoader = {
+    getShader: function(name) {
+      if (!window.shaders || !window.shaders[name]) {
+        console.warn(`Shader "${name}" not found, using fallback`);
+        return window.shaders?.pulse || ''; // Fallback to pulse if available
+      }
+      return window.shaders[name];
+    },
+    
+    getRandomBlendShader: function() {
+      const blendShaderNames = [
+          'dissolveBlend',
+          'advancedBlend',
+          'WarpedDissolveBlend',
+          'GhostTrailBlend',
+          'ColorCyclingWipeBlend',
+          'ZoomingKaleidoBlend'
+          // Add any others you create
+      ];
+      const availableBlends = blendShaderNames.filter(name => !!window.shaders?.[name]);
+      
+      if (availableBlends.length === 0) return window.shaders?.dissolveBlend || '';
+      
+      const randomName = availableBlends[Math.floor(Math.random() * availableBlends.length)];
+      return this.getShader(randomName);
+    }
+  };
+
+function init() {
+  // Show a cool loading screen while we get things ready
+  showLoadingIndicator();
+  
+  // Uniforms specifically for feedback shaders
+  feedbackUniforms = THREE.UniformsUtils.clone(uniforms); // Clone base uniforms
+  feedbackUniforms.previousFrameTexture = { value: null }; // Add the feedback texture uniform
+  
+  // Setup feedback render targets (similar to renderTarget1/2)
+  const pixelRatio = Math.min(window.devicePixelRatio, 2);
+  const renderTargetOptions = {
+      minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter,
+      format: THREE.RGBAFormat, type: THREE.HalfFloatType, // Or FloatType if needed
+      stencilBuffer: false, depthBuffer: false
+  };
+  renderTargetA = new THREE.WebGLRenderTarget(
+      window.innerWidth * pixelRatio, window.innerHeight * pixelRatio, renderTargetOptions
+  );
+  renderTargetB = new THREE.WebGLRenderTarget(
+      window.innerWidth * pixelRatio, window.innerHeight * pixelRatio, renderTargetOptions
+  );
+
+  /// Set up all our scenes and visuals
+  setupScenes();
+  
+  // Continue with initialization once shaders are loaded
+  const { blendMesh: setupBlendMesh } = setupScenes();
+  blendMesh = setupBlendMesh;
+  onWindowResize();
+
+  audioContext = new (window.AudioContext || window.webkitAudioContext)();
+  analyser = audioContext.createAnalyser();
+  analyser.fftSize = 1024;
+  dataArray = new Uint8Array(analyser.frequencyBinCount);
+
+  // Create gain node for volume control
+  gainNode = audioContext.createGain();
+  gainNode.gain.setValueAtTime(currentVolume, audioContext.currentTime);
+
+  // Connect analyser to gain node, and gain node to destination
+  analyser.connect(gainNode);
+  gainNode.connect(audioContext.destination);
+
+  window.addEventListener('resize', onWindowResize, false);
+  document.getElementById('audioUpload').addEventListener('change', (event) => handleAudioUpload(event, false));
+  document.getElementById('addToPlaylist').addEventListener('change', (event) => handleAudioUpload(event, true));
+  document.getElementById('playPause').addEventListener('click', togglePlayPause);
+  document.getElementById('prevTrack').addEventListener('click', playPreviousTrack);
+  document.getElementById('nextTrack').addEventListener('click', playNextTrack);
+  document.getElementById('playlistToggle').addEventListener('click', togglePlaylist);
+  document.getElementById('visualizerSelect').addEventListener('change', changeVisualizer);
+  document.getElementById('seekBar').addEventListener('input', handleSeek);
+  document.getElementById('volumeSlider').addEventListener('input', handleVolumeChange);
+  document.getElementById('muteButton').addEventListener('click', toggleMute);
+  document.addEventListener('keydown', handleKeyPress);
+  document.body.addEventListener('mousemove', showUI);
+  hideUIAfterDelay();
+  
+  
+
+  // Initialize Sortable for playlist reordering
+  new Sortable(document.getElementById('playlistItems'), {
+    animation: 150,
+    onEnd: function(evt) {
+      const oldIndex = evt.oldIndex;
+      const newIndex = evt.newIndex;
+      const [movedItem] = playlistOrder.splice(oldIndex, 1);
+      playlistOrder.splice(newIndex, 0, movedItem);
+      updatePlaylistUI();
+    }
+  });
+  
+  // Set the visualizer dropdown to 'random'
+  document.getElementById('visualizerSelect').value = 'random';
+  
+  // Initialize random switching
+  startRandomSwitching();
+  
+  onWindowResize(); 
+  // Hide loading indicator
+  hideLoadingIndicator();
+  
+}
+
+
+// Show simple loading indicator
+function showLoadingIndicator() {
+  const loadingEl = document.createElement('div');
+  loadingEl.id = 'shader-loading';
+  loadingEl.style.position = 'fixed';
+  loadingEl.style.top = '0';
+  loadingEl.style.left = '0';
+  loadingEl.style.width = '100%';
+  loadingEl.style.height = '100%';
+  loadingEl.style.backgroundColor = 'rgba(0, 0, 0, 0.8)';
+  loadingEl.style.color = '#00ff9d';
+  loadingEl.style.display = 'flex';
+  loadingEl.style.alignItems = 'center';
+  loadingEl.style.justifyContent = 'center';
+  loadingEl.style.zIndex = '9999';
+  loadingEl.style.fontFamily = '"Orbitron", sans-serif';
+  loadingEl.innerHTML = '<div>Loading visualizer shaders...</div>';
+  document.body.appendChild(loadingEl);
+}
+
+function hideLoadingIndicator() {
+  const loadingEl = document.getElementById('shader-loading');
+  if (loadingEl) {
+    loadingEl.style.opacity = '0';
+    loadingEl.style.transition = 'opacity 0.5s ease';
+    setTimeout(() => loadingEl.remove(), 500);
+  }
+}
+
+function setupScenes() {
+  scene1 = new THREE.Scene();
+  scene2 = new THREE.Scene();
+  blendScene = new THREE.Scene();
+  camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.1, 100);
+  
+  // First optimization: Smart renderer setup
+  const pixelRatio = Math.min(window.devicePixelRatio, 2); // Cap at 2x for performance
+  renderer = new THREE.WebGLRenderer({ 
+    canvas: document.getElementById('canvas'),
+    alpha: true,
+    antialias: true,
+    powerPreference: "high-performance" // This tells the browser to use the dedicated GPU if available
+  });
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  renderer.setPixelRatio(pixelRatio);
+  
+  const geometry = new THREE.PlaneGeometry(2, 2);
+  const material1 = new THREE.ShaderMaterial({
+    uniforms: uniforms,
+    vertexShader: shaderLoader.getShader('vertex'),
+    fragmentShader: shaderLoader.getShader('pulse')
+  });
+  const material2 = new THREE.ShaderMaterial({
+    uniforms: THREE.UniformsUtils.clone(uniforms),
+    vertexShader: shaderLoader.getShader('vertex'),
+    fragmentShader: shaderLoader.getShader('pulse')
+  });
+  
+  scene1.add(new THREE.Mesh(geometry, material1));
+  scene2.add(new THREE.Mesh(geometry, material2));
+  
+  // Setup render targets as before
+  const renderTargetOptions = {
+    minFilter: THREE.LinearFilter,
+    magFilter: THREE.LinearFilter,
+    format: THREE.RGBAFormat,
+    type: THREE.HalfFloatType,
+    stencilBuffer: false,
+    depthBuffer: false
+  };
+  
+  renderTarget1 = new THREE.WebGLRenderTarget(
+    window.innerWidth * pixelRatio, 
+    window.innerHeight * pixelRatio,
+    renderTargetOptions
+  );
+  
+  renderTarget2 = new THREE.WebGLRenderTarget(
+    window.innerWidth * pixelRatio, 
+    window.innerHeight * pixelRatio,
+    renderTargetOptions
+  );
+
+  renderTarget3 = new THREE.WebGLRenderTarget(
+        window.innerWidth * pixelRatio, 
+        window.innerHeight * pixelRatio,
+        renderTargetOptions
+    );
+
+  // Setup blend mesh with blend shader
+  const blendMaterial = new THREE.ShaderMaterial({
+    uniforms: {
+      blendFactor: { value: 0.0 },
+      texture1: { value: renderTarget1.texture },
+      texture2: { value: renderTarget2.texture },
+      resolution: { value: new THREE.Vector2(window.innerWidth * pixelRatio, window.innerHeight * pixelRatio) },
+      time: { value: 0 },
+      bass: { value: 0 },
+      mid: { value: 0 },
+      treble: { value: 0 },
+      bassDrive: { value: 0 }
+    },
+    vertexShader: shaderLoader.getShader('vertex'),
+    fragmentShader: shaderLoader.getRandomBlendShader(),
+    transparent: true
+  });
+  
+  blendMesh = new THREE.Mesh(geometry, blendMaterial);
+  blendScene.add(blendMesh);
+  
+  camera.position.z = 1;
+
+  return { blendMesh };
+}
+
+function onWindowResize() {
+    if (!renderer || !camera) return; // Ensure renderer and camera exist
+
+    const width = window.innerWidth;
+    const height = window.innerHeight;
+    const pixelRatio = Math.min(window.devicePixelRatio, 2); // Cap pixel ratio
+
+    renderer.setSize(width, height);
+    renderer.setPixelRatio(pixelRatio);
+
+    // Update camera if it's perspective (Orthographic doesn't need aspect update)
+    // if (camera.isPerspectiveCamera) {
+    //     camera.aspect = width / height;
+    //     camera.updateProjectionMatrix();
+    // }
+
+    const effectiveWidth = width * pixelRatio;
+    const effectiveHeight = height * pixelRatio;
+
+    // Update the global resolution uniform (used by updateSpecificUniforms)
+    uniforms.resolution.value.set(effectiveWidth, effectiveHeight);
+
+    // Update render target sizes
+    if (renderTarget1) renderTarget1.setSize(effectiveWidth, effectiveHeight);
+    if (renderTarget2) renderTarget2.setSize(effectiveWidth, effectiveHeight);
+    // if (renderTarget3) renderTarget3.setSize(effectiveWidth, effectiveHeight); // If using a 3rd target
+    // ---> ADD RESIZE FOR FEEDBACK TARGETS <---
+    if (renderTargetA) renderTargetA.setSize(effectiveWidth, effectiveHeight);
+    if (renderTargetB) renderTargetB.setSize(effectiveWidth, effectiveHeight);
+
+    // Update resolution uniform directly in materials if they exist
+    // This ensures it's correct even if animate loop isn't running fast
+    const scenes = [scene1, scene2];
+    scenes.forEach(scene => {
+        if (scene?.children[0]?.material?.uniforms?.resolution) {
+            scene.children[0].material.uniforms.resolution.value.set(effectiveWidth, effectiveHeight);
+        }
+    });
+
+
+    // Update blend mesh resolution uniform if it exists
+    if (blendMesh?.material?.uniforms?.resolution) {
+        blendMesh.material.uniforms.resolution.value.set(effectiveWidth, effectiveHeight);
+    }
+
+     console.log(`Resized to: ${width}x${height} @${pixelRatio}px ratio. Effective: ${effectiveWidth}x${effectiveHeight}`);
+}
+
+function updateFrequencies() {
+    const now = performance.now();
+    
+    // Only update if enough time has passed
+    if (now - lastFrequencyUpdate >= FREQUENCY_UPDATE_INTERVAL) {
+        analyser.getByteFrequencyData(dataArray);
+        lastFrequencyUpdate = now;
+        
+        // Get new values
+        const newBass = (dataArray[2] / 255) * 3.0;
+        const newMid = (dataArray[10] / 255) * 3.0;
+        const newTreble = (dataArray[20] / 255) * 4.0;
+        
+        // Smooth the values
+        smoothedBass = SMOOTHING_FACTOR * smoothedBass + (1 - SMOOTHING_FACTOR) * newBass;
+        smoothedMid = SMOOTHING_FACTOR * smoothedMid + (1 - SMOOTHING_FACTOR) * newMid;
+        smoothedTreble = SMOOTHING_FACTOR * smoothedTreble + (1 - SMOOTHING_FACTOR) * newTreble;
+        
+        // Update uniforms with smoothed values
+        uniforms.bass.value = smoothedBass;
+        uniforms.mid.value = smoothedMid;
+        uniforms.treble.value = smoothedTreble;
+        
+        // Calculate amplitude once
+        const amplitude = smoothedBass + smoothedMid + smoothedTreble;
+        uniforms.total.value += mapRange(amplitude, 0, 12, 1, 5);
+        uniforms.amp.value = mapRange(amplitude, 0, 12, 2, 6);
+    }
+}
+
+function animate(currentTime = 0) {
+    isActive = isPlaying || isTransitioning || needsFeedback; // Keep active if feedback is needed
+
+    const deltaTime = currentTime - lastFrameTime;
+
+    if (!isActive && deltaTime < frameThreshold) {
+        requestAnimationFrame(animate);
+        return;
+    }
+    lastFrameTime = currentTime;
+
+    // --- Update Uniforms (Audio, Time, etc.) ---
+    const currentUniforms = needsFeedback ? feedbackUniforms : uniforms; // Use correct uniform set
+
+    if (isPlaying && songDuration > 0) {
+        const currentAudioTime = audioContext.currentTime - startTime;
+        // Update base time uniform (present in both uniform sets)
+        uniforms.time.value += 0.01;
+        feedbackUniforms.time.value = uniforms.time.value; // Keep them synced
+
+        // Update other uniforms based on audio/time
+        const bubblesVal = mapRange(currentAudioTime, 0, songDuration, 1, 5);
+        const zoomVal = mapRange(currentAudioTime, 0, songDuration, 1, 2.5);
+        const timeXVal = mapRange(currentAudioTime, 0, songDuration, 0.1, 1);
+        const timeIVal = mapRange(currentAudioTime, 0, songDuration, 2, 6);
+
+        updateFrequencies(); // Updates smoothedBass, Mid, Treble
+
+        // Update drive values (accumulate in both sets if needed, or just the active one)
+        const bassDriveInc = smoothedBass * 0.1;
+        const midDriveInc = smoothedMid * 0.1;
+        const trebleDriveInc = smoothedTreble * 0.1;
+
+        uniforms.bassDrive.value += bassDriveInc;
+        uniforms.midDrive.value += midDriveInc;
+        uniforms.trebleDrive.value += trebleDriveInc;
+        // Sync drive values to feedback uniforms
+        feedbackUniforms.bassDrive.value = uniforms.bassDrive.value;
+        feedbackUniforms.midDrive.value = uniforms.midDrive.value;
+        feedbackUniforms.trebleDrive.value = uniforms.trebleDrive.value;
+
+        // Update direct audio levels and other mapped values in the *active* set
+        currentUniforms.bass.value = smoothedBass;
+        currentUniforms.mid.value = smoothedMid;
+        currentUniforms.treble.value = smoothedTreble;
+        currentUniforms.bubbles.value = bubblesVal;
+        currentUniforms.zoom.value = zoomVal;
+        currentUniforms.timeX.value = timeXVal;
+        currentUniforms.timeI.value = timeIVal;
+        currentUniforms.total.value += (smoothedBass + smoothedMid + smoothedTreble); // Example total
+        currentUniforms.amp.value = mapRange(smoothedBass + smoothedMid + smoothedTreble, 0, 12, 2, 6);
+
+        // Update UI
+        updateSeekBar();
+
+    } else if (!isPlaying && !isTransitioning) {
+         // Freeze drive values (no decay)
+         // Keep updating time for continuous animation even when paused
+         uniforms.time.value += 0.01;
+         feedbackUniforms.time.value = uniforms.time.value;
+         // Update time in active uniforms if needed by shader
+         currentUniforms.time.value = uniforms.time.value;
+    }
+
+    // Update resolution uniform (should be in both sets)
+    // This is handled by onWindowResize setting the base 'uniforms' and cloning
+    // Ensure feedbackUniforms.resolution also gets updated if needed separately
+     if (currentUniforms.resolution) { // Update active set's resolution if it exists
+         currentUniforms.resolution.value.copy(uniforms.resolution.value);
+     }
+
+
+    // --- Define Read/Write Render Targets for Feedback ---
+    let readTarget = renderTargetA;
+    let writeTarget = renderTargetB;
+    // Simple swap logic (can be more complex if needed)
+    // We assume frame count or time can determine swap, but a simple toggle works
+    // For simplicity, let's just swap every frame for now
+    // A better way might be needed if performance is critical
+    if (Math.floor(currentTime / (1000/60)) % 2 === 0) { // Swap based on frame parity
+         readTarget = renderTargetA; writeTarget = renderTargetB;
+    } else {
+         readTarget = renderTargetB; writeTarget = renderTargetA;
+    }
+
+
+    // --- Rendering Logic ---
+    const activeSceneObject = currentScene === 1 ? scene1 : scene2;
+    const inactiveSceneObject = currentScene === 1 ? scene2 : scene1;
+
+    // --- Feedback Pass (if needed) ---
+    if (needsFeedback && !isTransitioning) {
+        // Set the previous frame texture uniform
+        feedbackUniforms.previousFrameTexture.value = readTarget.texture;
+
+        // Render the active scene (which uses feedbackUniforms) to the write target
+        renderer.setRenderTarget(writeTarget);
+        renderer.render(activeSceneObject, camera);
+
+        // Render the result (writeTarget) to the screen
+        renderer.setRenderTarget(null);
+        renderer.render(activeSceneObject, camera); // Render again using the *same* scene but targeting screen
+        // This re-renders, simpler alternative: copy writeTarget to screen
+        // (Requires a separate scene/mesh with writeTarget.texture)
+        // Example copy pass:
+        // copyMaterial.map = writeTarget.texture;
+        // renderer.render(copyScene, camera);
+
+    // --- Transition Logic ---
+    } else if (isTransitioning && transitionData) {
+        const progress = Math.min((performance.now() - transitionData.startTime) / 6000, 1.0);
+
+        // Determine if the outgoing/incoming shaders need feedback
+        const outgoingVisualizer = currentVisualizer; // Visualizer being faded out
+        const incomingVisualizer = transitionData.newVisualizer;
+        const feedbackShaders = ['prismatic']; // Keep this list updated
+        const outgoingNeedsFeedback = feedbackShaders.includes(outgoingVisualizer);
+        const incomingNeedsFeedback = feedbackShaders.includes(incomingVisualizer);
+
+        // -- Render Outgoing Scene (Texture 1 for Blend) --
+        const outgoingUniforms = outgoingNeedsFeedback ? feedbackUniforms : uniforms;
+        activeSceneObject.children[0].material.uniforms = outgoingUniforms; // Ensure correct uniforms
+        if (outgoingNeedsFeedback) {
+             // Use the *last rendered frame* from the feedback loop as the source
+             // This assumes the last frame before transition started is in 'readTarget'
+             outgoingUniforms.previousFrameTexture.value = readTarget.texture;
+             // Render outgoing scene WITH feedback to RenderTarget1
+             renderer.setRenderTarget(renderTarget1);
+             renderer.render(activeSceneObject, camera);
+        } else {
+             // Render outgoing scene WITHOUT feedback to RenderTarget1
+             renderer.setRenderTarget(renderTarget1);
+             renderer.render(activeSceneObject, camera);
+        }
+
+
+         // -- Render Incoming Scene (Texture 2 for Blend) --
+         const incomingUniforms = incomingNeedsFeedback ? feedbackUniforms : uniforms;
+         inactiveSceneObject.children[0].material.uniforms = incomingUniforms; // Ensure correct uniforms
+         if (incomingNeedsFeedback) {
+              // If incoming needs feedback, it should ideally use its *own* evolving state.
+              // For simplicity during transition, we might feed it the *outgoing* state,
+              // or just render it without feedback the first frame it appears.
+              // Let's render without feedback initially during blend for simplicity.
+              // A more complex setup could manage separate feedback loops.
+              incomingUniforms.previousFrameTexture.value = null; // Or renderTarget1.texture? Needs thought. Let's use null.
+              renderer.setRenderTarget(renderTarget2);
+              renderer.render(inactiveSceneObject, camera);
+         } else {
+              // Render incoming scene WITHOUT feedback to RenderTarget2
+              renderer.setRenderTarget(renderTarget2);
+              renderer.render(inactiveSceneObject, camera);
+         }
+
+
+        // -- Blend Pass --
+        blendMesh.material.uniforms.blendFactor.value = progress;
+        blendMesh.material.uniforms.texture1.value = renderTarget1.texture;
+        blendMesh.material.uniforms.texture2.value = renderTarget2.texture;
+         // Update blend shader audio uniforms if they use them
+         if (blendMesh.material.uniforms.bass) blendMesh.material.uniforms.bass.value = uniforms.bass.value;
+         if (blendMesh.material.uniforms.mid) blendMesh.material.uniforms.mid.value = uniforms.mid.value;
+         if (blendMesh.material.uniforms.treble) blendMesh.material.uniforms.treble.value = uniforms.treble.value;
+         if (blendMesh.material.uniforms.time) blendMesh.material.uniforms.time.value = uniforms.time.value;
+
+
+        renderer.setRenderTarget(null);
+        renderer.render(blendScene, camera);
+
+        // Check transition complete
+        if (progress >= 1) {
+            isTransitioning = false;
+            currentScene = currentScene === 1 ? 2 : 1; // Switch active scene
+            currentVisualizer = transitionData.newVisualizer;
+            // Ensure the newly active scene has the right uniforms set *after* transition
+            const finalActiveScene = currentScene === 1 ? scene1 : scene2;
+            finalActiveScene.children[0].material.uniforms = incomingNeedsFeedback ? feedbackUniforms : uniforms;
+            needsFeedback = incomingNeedsFeedback; // Update global flag
+            transitionData = null;
+            console.log("Transition complete. New visualizer:", currentVisualizer, "Needs Feedback:", needsFeedback);
+             // Clear feedback buffer to prevent stale image when switching TO feedback shader?
+            if (needsFeedback) { clearRenderTarget(renderTargetA); clearRenderTarget(renderTargetB); }
+        }
+
+    // --- Standard Rendering (No Feedback, No Transition) ---
+    } else {
+         // Render the active scene (which uses standard 'uniforms') to screen
+         // (No need to render to target first if no feedback/transitions)
+         renderer.setRenderTarget(null);
+         renderer.render(activeSceneObject, camera);
+    }
+
+    requestAnimationFrame(animate);
+}
+
+//Optional helper to clear targets when switching to feedback
+function clearRenderTarget(target) {
+  const currentClearColor = renderer.getClearColor(new THREE.Color());
+  const currentClearAlpha = renderer.getClearAlpha();
+  renderer.setRenderTarget(target);
+  renderer.setClearColor(0x000000, 0); // Clear to transparent black
+  renderer.clear();
+  renderer.setClearColor(currentClearColor, currentClearAlpha); // Restore clear color
+}
+function updateVisualizerAndUI() {
+    if (isPlaying && audioBuffer) {
+        const currentTime = audioContext.currentTime - startTime;
+        
+        // Update time display
+        currentTimeDisplay.textContent = formatTime(currentTime);
+        
+        // Update seek slider
+        const progress = (currentTime / songDuration) * 100;
+        seekSlider.value = progress;
+        seekSlider.style.setProperty('--seek-before-width', `${progress}%`);
+
+        // Check if the song has ended
+        if (currentTime >= songDuration) {
+            playNextTrack();
+        }
+    }
+}
+
+function updateSpecificUniforms(scene, uniformsToUpdate) {
+    if (!scene || !scene.children || !scene.children[0] || !scene.children[0].material) return;
+
+    const materialUniforms = scene.children[0].material.uniforms;
+    for (const key in uniformsToUpdate) {
+        if (materialUniforms.hasOwnProperty(key)) {
+            materialUniforms[key].value = uniformsToUpdate[key].value;
+        }
+        // Optional: Warn if a uniform exists in the update object but not in the material
+        // else {
+        //     console.warn(`Uniform "${key}" not found in material for scene.`);
+        // }
+    }
+}
+
+function handleAudioUpload(event, addToExisting) {
+  const files = event.target.files;
+  
+  if (!addToExisting) {
+    playlist = [];
+    playlistOrder = [];
+    currentTrackIndex = 0;
+  }
+
+  let filesProcessed = 0;
+  const startIndex = playlist.length; // For adding to existing playlist
+  const wasPlaying = isPlaying; // Store the current playback state
+
+  Array.from(files).forEach((file, index) => {
+    const reader = new FileReader();
+    reader.onload = function(e) {
+      audioContext.decodeAudioData(e.target.result, function(buffer) {
+        const newIndex = startIndex + index;
+        playlist.push({ buffer: buffer, name: file.name.replace(/\.[^/.]+$/, "") });
+        playlistOrder.push(newIndex);
+        filesProcessed++;
+
+        if (filesProcessed === files.length) {
+          updatePlaylistUI();
+          
+          // Only start playback if it's a single file upload and not adding to playlist
+          if (!addToExisting && files.length === 1 && !isPlaying) {
+            audioBuffer = buffer;
+            songDuration = buffer.duration;
+            durationDisplay.textContent = formatTime(songDuration);
+            seekSlider.max = 100;
+            startTime = audioContext.currentTime;
+            pauseTime = 0;
+            playAudio(0);
+          } else if (addToExisting) {
+            // If we're adding to the playlist, maintain the current playback state
+            updatePlayPauseButton(wasPlaying);
+          }
+          
+          // --- Notification ---
+          showNotification(`${files.length} file(s) added.`);
+          
+        }
+      });
+    };
+    reader.readAsArrayBuffer(file);
+  });
+}
+
+
+document.getElementById('audioUpload').addEventListener('change', function(e) {
+  const fileName = e.target.files[0].name;
+  const label = document.querySelector('.file-input-label');
+ // label.querySelector('.file-input-text').textContent = fileName;
+  label.classList.add('file-selected');
+  
+  // Remove the class after the animation completes
+  setTimeout(() => {
+    label.classList.remove('file-selected');
+  }, 500);
+});
+
+
+let currentRandomInterval;
+
+function startRandomSwitching() {
+  function switchVisualizer() {
+    const currentIndex = visualizerList.indexOf(currentVisualizer);
+    let randomIndex;
+    do {
+      randomIndex = Math.floor(Math.random() * visualizerList.length);
+    } while (randomIndex === currentIndex);
+    
+    const newVisualizer = visualizerList[randomIndex];
+    changeVisualizer({ target: { value: newVisualizer } });
+    
+    // Set the next switch
+    const nextSwitchTime = Math.random() * (50000 - 10000) + 10000;
+    currentRandomInterval = setTimeout(switchVisualizer, nextSwitchTime);
+  }
+
+  switchVisualizer(); // Start the first switch immediately
+}
+
+function stopRandomSwitching() {
+  if (currentRandomInterval) {
+    clearTimeout(currentRandomInterval);
+  }
+}
+
+function getRandomBlendShader() {
+  return shaderLoader.getRandomBlendShader();
+}
+
+function getShaderForVisualizer(visualizer) {
+    return shaderLoader.getShader(visualizer);
+  }
+
+function changeVisualizer(event) {
+    if (isTransitioning) return;
+
+    isActive = true; // Run full speed during transition/change
+    const newVisualizer = event.target.value;
+
+    // --- ADD FEEDBACK CHECK ---
+    const feedbackShaders = ['prismatic']; // Add names of shaders needing feedback here
+    needsFeedback = feedbackShaders.includes(newVisualizer);
+    console.log(`Changing to ${newVisualizer}, Needs Feedback: ${needsFeedback}`);
+    // --- END FEEDBACK CHECK ---
+
+    if (newVisualizer === 'random') {
+        startRandomSwitching();
+        // Pick an initial random one that isn't 'random' itself
+         const initialRandom = visualizerList[Math.floor(Math.random() * visualizerList.length)];
+         // Trigger change again with the specific visualizer
+         // Need a slight delay or mechanism to prevent infinite loop if random picks random
+         setTimeout(() => changeVisualizer({ target: { value: initialRandom }, isTrusted: false }), 10);
+        return;
+    } else {
+        stopRandomSwitching();
+    }
+
+    if (newVisualizer === currentVisualizer) return;
+
+    // Update the select element if not user triggered
+    if (event.isTrusted === false && document.getElementById('visualizerSelect').value !== newVisualizer) {
+         document.getElementById('visualizerSelect').value = newVisualizer;
+    }
+
+
+    // Determine which scene will get the new shader
+    const targetScene = currentScene === 1 ? scene2 : scene1;
+    const targetMaterial = targetScene.children[0].material;
+
+    // --- SWAP UNIFORMS IF NEEDED ---
+    // Assign the correct uniform object based on whether feedback is needed
+    targetMaterial.uniforms = needsFeedback ? feedbackUniforms : uniforms;
+    // --- END SWAP ---
+
+    // Set new shader
+    targetMaterial.fragmentShader = getShaderForVisualizer(newVisualizer);
+    targetMaterial.needsUpdate = true; // Crucial!
+
+    // Reset feedback texture if switching *away* from a feedback shader
+    // to prevent stale image issues (optional but good practice)
+     if (!needsFeedback && feedbackUniforms.previousFrameTexture.value) {
+         feedbackUniforms.previousFrameTexture.value = null; // Or a blank texture
+    }
+
+    // Setup transition data
+    isTransitioning = true;
+    transitionData = {
+        startTime: performance.now(),
+        newVisualizer: newVisualizer
+    };
+
+    // Reset blend factor and set blend shader
+    blendMesh.material.uniforms.blendFactor.value = 0;
+    blendMesh.material.fragmentShader = getRandomBlendShader();
+    blendMesh.material.needsUpdate = true;
+}
+
+function transition() {
+    if (!transitionData) return;
+
+    // Update blend factor with easing
+    const progress = (performance.now() - transitionData.startTime) / 3000; // 4 second transition
+    const easedProgress = Math.sin(progress * Math.PI / 2); // Ease-in-out sine
+    blendMesh.material.uniforms.blendFactor.value = Math.min(easedProgress, 1);
+    
+    // Update blend mesh textures
+    blendMesh.material.uniforms.texture1.value = renderTarget1.texture;
+    blendMesh.material.uniforms.texture2.value = renderTarget2.texture;
+    
+    if (progress < 1) {
+        requestAnimationFrame(transition);
+    } else {
+        isTransitioning = false;
+        currentScene = currentScene === 1 ? 2 : 1;
+        currentVisualizer = transitionData.newVisualizer;
+        
+        // Store the direction before nullifying transitionData
+        const nextDirection = transitionData.direction * -1;
+        
+        
+        transitionData = {
+            startTime: performance.now(),
+            newVisualizer: currentVisualizer,
+            direction: nextDirection
+        };
+    }
+}
+
+
+const seekSlider = document.querySelector('.seek-slider');
+const currentTimeDisplay = document.getElementById('currentTime');
+const durationDisplay = document.getElementById('duration');
+const hologram = document.querySelector('.hologram');
+
+
+function formatTime(seconds) {
+  const minutes = Math.floor(seconds / 60);
+  const remainingSeconds = Math.floor(seconds % 60);
+  return `${minutes.toString().padStart(2, '0')}:${remainingSeconds.toString().padStart(2, '0')}`;
+}
+
+function updatePlaylistUI() {
+  const playlistItems = document.getElementById('playlistItems');
+  playlistItems.innerHTML = '';
+  
+  playlistOrder.forEach((index, orderIndex) => {
+    if (index >= playlist.length) {
+      console.error('Invalid playlist index:', index);
+      return; // Skip this iteration
+    }
+    
+    const track = playlist[index];
+    if (!track) {
+      console.error('Track not found for index:', index);
+      return; // Skip this iteration
+    }
+    
+    const li = document.createElement('li');
+    li.className = 'playlist-item';
+    if (orderIndex === currentTrackIndex) li.classList.add('playing');
+    
+    const trackName = document.createElement('span');
+    trackName.textContent = track.name;
+    trackName.className = 'track-name';
+    trackName.addEventListener('click', () => playTrack(orderIndex));
+    
+    const removeButton = document.createElement('button');
+    removeButton.innerHTML = '&times;';
+    removeButton.className = 'remove-track';
+    removeButton.title = 'Remove track';
+    removeButton.addEventListener('click', (e) => {
+      e.stopPropagation();
+      removeTrack(orderIndex);
+    });
+    
+    li.appendChild(trackName);
+    li.appendChild(removeButton);
+    playlistItems.appendChild(li);
+  });
+  
+  // Show playlist box if there are items
+  const playlistBox = document.getElementById('playlistBox');
+  if (playlist.length > 0) {
+    playlistBox.classList.remove('hidden');
+    playlistBox.classList.add('expanded');
+  } else {
+    playlistBox.classList.add('hidden');
+    playlistBox.classList.remove('expanded');
+  }
+}
+  
+function removeTrack(index) {
+  const removedIndex = playlistOrder[index];
+  const playlistItems = document.getElementById('playlistItems');
+  const trackElement = playlistItems.children[index];
+
+  if (!trackElement) {
+    console.error('Track element not found');
+    return;
+  }
+
+  // Check if the removed track is currently playing
+  const wasPlaying = index === currentTrackIndex && isPlaying;
+
+  // Remove the track from the arrays immediately
+  playlistOrder.splice(index, 1);
+  playlist.splice(removedIndex, 1);
+  
+  // Update remaining indices in playlistOrder
+  for (let i = 0; i < playlistOrder.length; i++) {
+    if (playlistOrder[i] > removedIndex) {
+      playlistOrder[i]--;
+    }
+  }
+  
+  // Adjust currentTrackIndex if necessary
+  if (index < currentTrackIndex) {
+    currentTrackIndex--;
+  } else if (index === currentTrackIndex) {
+    if (isPlaying) {
+      source.stop();
+      isPlaying = false;
+    }
+    if (playlist.length > 0) {
+      currentTrackIndex = currentTrackIndex % playlist.length;
+      // Only play the next track if the removed track was playing
+      if (wasPlaying) {
+        playTrack(currentTrackIndex);
+      }
+    } else {
+      currentTrackIndex = -1;
+      audioBuffer = null;
+      updatePlayPauseButton(false);
+    }
+  }
+  
+  // Start the collapsing animation
+  trackElement.classList.add('collapsing');
+
+  // Set a timeout to remove the element after a short delay
+  setTimeout(() => {
+    // Remove the track element from the DOM
+    playlistItems.removeChild(trackElement);
+    
+    // Update the UI for the remaining tracks
+    updatePlaylistUI();
+  }, 300); // Adjust this timeout to match your animation duration
+}
+
+function playTrack(index) {
+    currentTrackIndex = index;
+    audioBuffer = playlist[playlistOrder[index]].buffer;
+    songDuration = audioBuffer.duration;
+    durationDisplay.textContent = formatTime(songDuration);
+    seekSlider.max = 100;
+    playAudio(0);
+    updatePlaylistUI();
+}
+
+function playNextTrack() {
+    if (playlist.length > 0) {
+        currentTrackIndex++;
+        if (currentTrackIndex >= playlist.length) {
+            // We've reached the end of the playlist
+            isPlaying = false;
+            updatePlayPauseButton(false);
+            return;
+        }
+        audioBuffer = playlist[playlistOrder[currentTrackIndex]].buffer;
+        songDuration = audioBuffer.duration;
+        durationDisplay.textContent = formatTime(songDuration);
+        playAudio(0);
+        updatePlaylistUI();
+    } else {
+        // If there are no more tracks, stop playback
+        isPlaying = false;
+        updatePlayPauseButton(false);
+    }
+}
+
+function playPreviousTrack() {
+  currentTrackIndex = (currentTrackIndex - 1 + playlist.length) % playlist.length;
+  playTrack(currentTrackIndex);
+}
+
+function togglePlaylist() {
+  const playlistBox = document.getElementById('playlistBox');
+  playlistBox.classList.toggle('expanded');
+}
+
+function playAudio(offset = 0) {
+    if (!audioBuffer && playlist.length > 0) {
+        audioBuffer = playlist[playlistOrder[currentTrackIndex]].buffer;
+        songDuration = audioBuffer.duration;
+        durationDisplay.textContent = formatTime(songDuration);
+    }
+
+    if (audioBuffer) {
+        if (source) {
+            source.stop(); // Stop the currently playing audio
+        }
+        source = audioContext.createBufferSource();
+        source.buffer = audioBuffer;
+        
+        // Connect source to analyser, analyser is already connected to gainNode in init()
+        source.connect(analyser);
+        
+        startTime = audioContext.currentTime - offset;
+        source.start(0, offset);
+        isPlaying = true;
+        updatePlayPauseButton(true);
+    }
+}
+
+function togglePlayPause() {
+  if (!audioBuffer && playlist.length > 0) {
+    // If no song is currently loaded but we have a playlist, start playing the first song
+    playAudio(0);
+    return;
+  }
+
+  if (audioBuffer) {
+    if (isPlaying) {
+      source.stop();
+      pauseTime = audioContext.currentTime - startTime;
+      isPlaying = false;
+    } else {
+      playAudio(pauseTime);
+    }
+    updatePlayPauseButton(isPlaying);
+  }
+}
+
+function updatePlayPauseButton(isPlaying) {
+  const playIcon = document.querySelector('#playPause .play-icon');
+  const pauseIcon = document.querySelector('#playPause .pause-icon');
+  
+  if (isPlaying) {
+    playIcon.style.display = 'none';
+    pauseIcon.style.display = 'inline';
+  } else {
+    playIcon.style.display = 'inline';
+    pauseIcon.style.display = 'none';
+  }
+}
+
+function handleSeek(event) {
+  if (audioBuffer) {
+    const seekTime = (event.target.value / 100) * songDuration;
+    if (isPlaying) {
+      source.stop();
+    }
+    playAudio(seekTime);
+    startTime = audioContext.currentTime - seekTime;
+  }
+}
+
+function updateSeekBar() {
+  if (audioBuffer && isPlaying) {
+    const currentTime = audioContext.currentTime - startTime;
+    const duration = audioBuffer.duration;
+    const progress = (currentTime / duration) * 100;
+    seekSlider.value = progress;
+    seekSlider.style.setProperty('--seek-before-width', `${progress}%`);
+
+    currentTimeDisplay.textContent = formatTime(currentTime);
+    durationDisplay.textContent = formatTime(duration);
+    hologram.textContent = formatTime(currentTime);
+
+    if (currentTime >= duration) {
+      if (currentTrackIndex === playlist.length - 1) {
+        // We've reached the end of the last track
+        isPlaying = false;
+        updatePlayPauseButton(false);
+      } else {
+        playNextTrack();
+      }
+    }
+  }
+}
+
+// Initialize displays
+currentTimeDisplay.textContent = "00:00";
+durationDisplay.textContent = "00:00";
+hologram.textContent = "00:00";
+
+seekSlider.addEventListener('input', function() {
+  if (audioBuffer) {
+    const seekTime = (this.value / 100) * audioBuffer.duration;
+    hologram.textContent = formatTime(seekTime);
+  } else {
+    hologram.textContent = "00:00";
+  }
+});
+
+function showUI() {
+  const ui = document.getElementById('ui');
+  ui.classList.remove('hidden');
+  document.body.classList.remove('cursor-hidden');
+  clearTimeout(window.uiTimeout);
+  hideUIAfterDelay();
+}
+
+function hideUIAfterDelay() {
+  window.uiTimeout = setTimeout(() => {
+    document.getElementById('ui').classList.add('hidden');
+    document.body.classList.add('cursor-hidden');
+  }, 4000);
+}
+
+function handleKeyPress(event) {
+  // Existing code for arrow key visualizer switching
+  if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(event.key)) {
+    event.preventDefault();
+    const direction = event.key === 'ArrowLeft' || event.key === 'ArrowUp' ? -1 : 1;
+    const isVertical = event.key === 'ArrowUp' || event.key === 'ArrowDown';
+    switchVisualizerWithArrowKeys(direction, isVertical);
+  }
+
+  // New keyboard shortcuts
+  switch(event.key) {
+    case ' ': // Space bar
+      event.preventDefault();
+      togglePlayPause();
+      break;
+    case 'n':
+      playNextTrack();
+      break;
+    case 'p':
+      playPreviousTrack();
+      break;
+    case 'm':
+      toggleMute();
+      break;
+    case '+':
+    case '=':
+      changeVolume(0.1);
+      break;
+    case '-':
+      changeVolume(-0.1);
+      break;
+  }
+}
+
+const volumeControl = document.querySelector('.volume-control');
+const volumeSliderContainer = document.querySelector('.volume-slider-container');
+let hideTimeout;
+
+function showVolumeSlider() {
+  clearTimeout(hideTimeout);
+  volumeSliderContainer.classList.add('visible');
+}
+
+function hideVolumeSlider() {
+  hideTimeout = setTimeout(() => {
+    volumeSliderContainer.classList.remove('visible');
+  }, 1000);
+}
+
+volumeControl.addEventListener('mouseenter', showVolumeSlider);
+volumeControl.addEventListener('mouseleave', hideVolumeSlider);
+
+// Prevent hiding when interacting with the slider
+volumeSliderContainer.addEventListener('mouseenter', () => {
+  clearTimeout(hideTimeout);
+});
+
+volumeSliderContainer.addEventListener('mouseleave', hideVolumeSlider);
+
+// Update the volume display when the slider changes
+document.getElementById('volumeSlider').addEventListener('input', function() {
+  document.getElementById('volumeDisplay').textContent = this.value;
+});
+
+function toggleMute() {
+  isMuted = !isMuted;
+  const muteButton = document.getElementById('muteButton');
+  const volumeSlider = document.getElementById('volumeSlider');
+  const volumeDisplay = document.getElementById('volumeDisplay');
+
+  if (isMuted) {
+    muteButton.classList.add('muted');
+    muteButton.querySelector('.material-icons').textContent = 'volume_off';
+    gainNode.gain.setValueAtTime(0, audioContext.currentTime);
+    volumeDisplay.textContent = 'Muted';
+  } else {
+    muteButton.classList.remove('muted');
+    muteButton.querySelector('.material-icons').textContent = 'volume_up';
+    const volume = parseInt(volumeSlider.value) / 11;
+    gainNode.gain.setValueAtTime(volume, audioContext.currentTime);
+    volumeDisplay.textContent = volumeSlider.value;
+  }
+}
+
+function handleVolumeChange(event) {
+  const volumeValue = parseInt(event.target.value);
+  currentVolume = volumeValue / 11; // Convert 0-11 range to 0-1
+  
+  if (gainNode) {
+    if (!isMuted) {
+      gainNode.gain.setValueAtTime(currentVolume, audioContext.currentTime);
+    }
+  }
+  
+  document.getElementById('volumeDisplay').textContent = isMuted ? 'Muted' : volumeValue;
+}
+
+function changeVolume(delta) {
+  const volumeSlider = document.getElementById('volumeSlider');
+  let newVolume = parseInt(volumeSlider.value) + delta * 11;
+  newVolume = Math.max(0, Math.min(11, newVolume));
+  volumeSlider.value = newVolume;
+  handleVolumeChange({ target: volumeSlider });
+}
+
+function switchVisualizerWithArrowKeys(direction, isVertical) {
+  const selectElement = document.getElementById('visualizerSelect');
+  const currentIndex = visualizerList.indexOf(currentVisualizer);
+  let newIndex;
+
+  if (selectElement.value === 'random') {
+    if (isVertical) {
+      // If on random and using up/down arrows, switch to a random visualizer
+      newIndex = (currentIndex + direction + visualizerList.length) % visualizerList.length;
+      while (newIndex === currentIndex) {
+        newIndex = (currentIndex + direction + visualizerList.length) % visualizerList.length;
+      }
+    } else {
+      // If on random and using left/right arrows, stay on random
+      selectElement.value = 'random';
+      startRandomSwitching();
+      return;
+    }
+  } else {
+    // If not on random, go to the next/previous visualizer
+    newIndex = (currentIndex + isVertical + visualizerList.length) % visualizerList.length;
+  }
+
+  const newVisualizer = visualizerList[newIndex];
+  selectElement.value = newVisualizer;
+  changeVisualizer({ target: { value: newVisualizer } });
+}
+
+const dropZone = document.getElementById('dropZone');
+
+// Prevent default drag behaviors
+['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+  document.body.addEventListener(eventName, preventDefaults, false);
+});
+
+function preventDefaults (e) {
+  e.preventDefault();
+  e.stopPropagation();
+}
+
+// Handle drag enter/leave
+['dragenter', 'dragover'].forEach(eventName => {
+  document.body.addEventListener(eventName, highlight, false);
+});
+
+['dragleave', 'drop'].forEach(eventName => {
+  document.body.addEventListener(eventName, unhighlight, false);
+});
+
+function highlight(e) {
+  dropZone.classList.add('active');
+}
+
+function unhighlight(e) {
+  dropZone.classList.remove('active');
+}
+
+// Handle drop
+document.body.addEventListener('drop', handleDrop, false);
+
+function handleDrop(e) {
+  const dt = e.dataTransfer;
+  const files = dt.files;
+
+  handleAudioUpload({ target: { files: files } }, true);
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+    // Wait a tiny bit to make sure shaders.js is loaded
+    setTimeout(function() {
+      if (!window.shaders) {
+        console.error("Shaders didn't load! 😢");
+        return;
+      }
+      
+      // Start the visualizer
+      init();
+      onWindowResize();
+      animate();
+    }, 100);
+  });
+  
+function showNotification(message, isError = false) {
+    const notification = document.createElement('div');
+    notification.textContent = message;
+    notification.style.position = 'fixed';
+    notification.style.top = '20px';
+    notification.style.left = '5%';
+    notification.style.transform = 'translateX(-50%)';
+    notification.style.background = isError ? 'rgba(255, 65, 54, 0.8)' : 'rgba(0, 255, 157, 0.8)'; // Red for error, cyan for success
+    notification.style.color = isError ? 'white' : 'black';
+    notification.style.padding = '10px 20px';
+    notification.style.borderRadius = '5px';
+    notification.style.zIndex = '10000'; // Ensure it's on top
+    notification.style.fontFamily = '"Orbitron", sans-serif';
+    notification.style.fontSize = '14px';
+    notification.style.boxShadow = '0 2px 10px rgba(0, 0, 0, 0.3)';
+    notification.style.opacity = '0';
+    notification.style.transition = 'opacity 0.3s ease, top 0.3s ease';
+
+    document.body.appendChild(notification);
+
+    // Fade in
+    setTimeout(() => {
+        notification.style.opacity = '1';
+        notification.style.top = '30px';
+    }, 10); // Small delay to allow transition
+
+    // Fade out and remove
+    setTimeout(() => {
+        notification.style.opacity = '0';
+        notification.style.top = '20px';
+        setTimeout(() => {
+            if (notification.parentNode) {
+                notification.parentNode.removeChild(notification);
+            }
+        }, 300); // Wait for fade out transition
+    }, 3000); // Notification duration: 3 seconds
+}
+</script>
+</body></html>
